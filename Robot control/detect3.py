@@ -49,7 +49,7 @@ T = np.array(([-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1])) #camera
 
 parser = argparse.ArgumentParser(description = "Object detection")
 parser.add_argument("-m", "--model", type=str, default="config/yolov3-custom.cfg", help="Path to model definition file (.cfg)")
-parser.add_argument("-w", "--weights", type=str, default="weights/yolov3_ckpt_20.pth", help="Path to weights or checkpoint file")  #20 best
+parser.add_argument("-w", "--weights", type=str, default="weights/yolov3_ckpt_360.pth", help="Path to weights or checkpoint file")  #20 best
 parser.add_argument("-c", "--classes", type=str, default="data/custom/classes.names", help="Path to classes label file (.names)")
 parser.add_argument("--img_size", type=int, default=416, help="Size of each image dimension for yolo")   
 parser.add_argument("--conf_thres", type=float, default=0.1, help="Object confidence threshold")
@@ -58,8 +58,18 @@ args = parser.parse_args()
 
 #Load the model and classes
 
+torch.backends.cudnn.benchmark = True
 classes = load_classes(args.classes)  
 model = load_model(args.model, args.weights)
+model.eval()
+
+
+'''backend = "qnnpack"
+model.qconfig = torch.quantization.get_default_qconfig(backend)
+torch.backends.quantized.engine = backend
+model_static_quantized = torch.quantization.prepare(model, inplace=False)
+model = torch.quantization.convert(model_static_quantized, inplace=False)'''
+
 img_size = args.img_size
 conf_thresh = args.conf_thres
 nms_thresh = args.nms_thres
@@ -67,7 +77,8 @@ nms_thresh = args.nms_thres
 #Load parameters
 
 parameters_file = cv2.FileStorage()
-parameters_file.open("/calibration_param/parameters4pp.xml", cv2.FileStorage_READ)
+#parameters_file.open("parameters4pp.xml", cv2.FileStorage_READ)
+parameters_file.open("CameraCalib1.xml", cv2.FileStorage_READ)
 intrinsic_paramL = parameters_file.getNode("IntrinsciParamL").mat()
 intrinsic_paramR = parameters_file.getNode("IntrinsicParamR").mat()
 rotL = parameters_file.getNode("Rotation").mat()
@@ -99,6 +110,7 @@ proj_matrix.open('projective_mat_416x416.xml', cv2.FileStorage_READ)
 proj_matL = proj_matrix.getNode('ProjectiveMatL').mat()
 proj_matR = proj_matrix.getNode('ProjectiveMatR').mat()
 proj_matrix.release()'''
+
 #-----------------------Filter-------------------------------
 delta_t = 0.35
 filter = KalmanFilter(dim_x = 4, dim_z= 2)
@@ -113,37 +125,20 @@ filter.Q = Q_discrete_white_noise(dim=2, dt= 0.35, var = 0.25,  block_size = 2) 
 
 #------------------------callbacks---------------------------------------
 
-def callbackL(ros_data):
-
-	#Take images from topic
-	#frame = cv2.imread(ros_data)
-	global frameL
-	#frame = bridge.imgmsg_to_cv2(ros_data, "bgr8")
+def callback_single_image(ros_data):
+	global frame
 	np_arr = np.frombuffer(ros_data.data, np.uint8)   #fromstring initially
-	frameL = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-	frameL = cv2.cvtColor(frameL, cv2.COLOR_BGR2RGB)
-	#cv2.imshow('image',frame)
+	frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+	frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+	#cv2.imshow('frame',frame)
 	#cv2.waitKey(50)
 
-
-def callbackR(ros_data):
-
-	#Take images from topic
-	#frame = cv2.imread(ros_data)
-	global frameR
-	#print ('cc')
-	#frame = bridge.imgmsg_to_cv2(ros_data, "bgr8")
-	np_arr = np.frombuffer(ros_data.data, np.uint8)   #fromstring initially
-	frameR = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-	frameR = cv2.cvtColor(frameR, cv2.COLOR_BGR2RGB)
-	#cv2.imshow('image',frame)
-	#cv2.waitKey(50)
 
 #--------------------------------------------------------------------------------------
 #---------------------------functions----------------------------------------------
 
 def detect_image(model, image, img_size=416, conf_thres=0.1, nms_thres=0.4):
-	model.eval()
+	
 	input_img = transforms.Compose([DEFAULT_TRANSFORMS, Resize(img_size)])((image,np.zeros((1,5))))[0].unsqueeze(0)
 	#unsqueeze transforms the new image in a column i.e. dimension 0 becomes unitary
 	if torch.cuda.is_available():
@@ -153,38 +148,57 @@ def detect_image(model, image, img_size=416, conf_thres=0.1, nms_thres=0.4):
 	#Detection: use torch.no_grad to deactivate the autograd engine. This is done 
 	#to perform inference without Gradient Calculation.
 	with torch.no_grad():
-		#global start
-		#start = time.time()
+		global start
+		start = time.time()
 		detections = model(input_img)
 		detections = non_max_suppression(detections, conf_thres, nms_thres)
 		#rescale the boxes at the original image size
 		detections = rescale_boxes(detections[0], img_size, image.shape[:2])
-		#global stop
-		#print(detections)
-		#stop = time.time()
+		print(detections)
+		detectionsL = detections[detections[:,0] < 960]
+		detectionsR = detections[detections[:,0] > 930]
+		global stop
+		print('detectionL',detectionsL)
+		print('detectionR',detectionsR)
+		stop = time.time()
 
-	return to_cpu(detections).numpy()
+	return to_cpu(detectionsL).numpy(), to_cpu(detectionsR).numpy()
 
-def show_detection(image, detections, name):
-	unique_labels = detections[:, -1]
+def show_detection(image, detectionsR, detectionsL, name):
+
 	n_cls_preds = 1
 	colors = np.random.uniform(0, 255, size=(1, 3))
-	font = cv2.FONT_HERSHEY_PLAIN
-	color = (0, 255, 0)
+	font = cv2.FONT_HERSHEY_DUPLEX
+	color = (0, 0, 0) 
 
-	for x1, y1, x2, y2, conf, class_pred in detections:
-		if conf == max(detections[:,4]):   #avoid miss detections 
-			x_center = (x1 + x2)/2   #positions to be sent to topic
-			y_center = (y1 + y2)/2
-			box_width = x2 -x1
-			box_height = y2 -y1
+	for x1, y1, x2, y2, conf, class_pred in detectionsL:
+		if conf == max(detectionsL[:,4]) and conf>0.3:   #avoid miss detections 
+			x_center_L = (x1 + x2)/2   #positions to be sent to topic
+			y_center_L = (y1 + y2)/2
 			cv2.rectangle(image, (int(x1),int(y1)), (int(x2),int(y2)), 170, 2)
-		#cv2.putText(image, class_pred, (int(x1),int(y1)), font, 3, color,2)
+			cv2.putText(image, 'Confidence Left: ' + str(conf),(x1, y1),font, 0.5, color, 1)
+			break
+		#cv2.putText(image, 'Confidence Left: ' + str(conf),(0, 354),font, 0.5, color, 1)
 
-	#cv2.putText(image,"Inference time" + str((stop-start)) , (x1,y1), font, 3, color,2)
+	for x1, y1, x2, y2, conf, class_pred in detectionsR:
+		if conf == max(detectionsR[:,4]) and conf>0.3: 
+			x_center_R = (x1 + x2)/2 - 960
+			y_center_R = (y1 + y2)/2
+			cv2.rectangle(image, (int(x1),int(y1)), (int(x2),int(y2)), 170, 2)
+			cv2.putText(image, 'Confidence Right: ' + str(conf),(x1, y1),font, 0.5, color, 1)
+			break
+			#cv2.putText(image, 'Confidence Right: ' + str(conf),(0, 368),font, 0.5, color, 1)
+		#else:
+			#continue
+
+
+	#inference = float("{0:.4f}".format(stop-start))
+	#fps = int(1/inference)
+	#cv2.putText(image, 'fps: ' + str(fps), (0,410), font, 0.5, color, 1)
+	#cv2.putText(image,'Inference time: ' + str(inference) + 's' , (0,396), font, 0.5, color,1)
 	cv2.imshow(name, image)
 	key = cv2.waitKey(1)
-	return x_center, y_center
+	return x_center_R, y_center_R, x_center_L, y_center_L, image
 #-------------------------------------------------------------------------
 
 #--------------------------------offline prediction on a video-------------------
@@ -214,18 +228,20 @@ def show_detection(image, detections, name):
 def main():
 	global frameL
 	global frameR
+	global frame
 	global coordinates
 	global filtered_coordinates
 	global time_stamp
 	global pose
-
+	point_stamp = PointStamped()
 #--------------------------------------------------------------------
 
 	rospy.init_node('video_subscriber', anonymous = True)
 	publisher = rospy.Publisher('tool_pose', PointStamped, queue_size=10)
+	image_publisher = rospy.Publisher('processed_images', Image, queue_size=1)
+	unfiltered_publisher = rospy.Publisher('unfiltered_local', Vector3, queue_size=1)
 	tf_broadcaster = rospy.Publisher('/tf',tf2_msgs.msg.TFMessage, queue_size=1)
-	rospy.Subscriber("/camera/leftImage/compressed", CompressedImage, callbackL)
-	rospy.Subscriber("/camera/rightImage/compressed", CompressedImage, callbackR)
+	rospy.Subscriber('/camera/image_raw/compressed', CompressedImage, callback_single_image)
 	rate = rospy.Rate(10)
 	time.sleep(1)
 
@@ -236,9 +252,9 @@ def main():
 	pitch_sim = 0.0220493542626
 	yaw_sim = 2.70671490846
 	#add for real robot too
-	initial_orientation = transformations.quaternion_from_euler(roll_sim, pitch_sim, yaw_sim)
+	#initial_orientation = transformations.quaternion_from_euler(roll_sim, pitch_sim, yaw_sim)
 	#pose = Pose(initial_position, initial_orientation)
-	publisher.publish(initial_position)
+	#publisher.publish(initial_position)
 
 
 
@@ -257,21 +273,28 @@ def main():
 #-------------------------------------------------------------------	
 
 	while not rospy.is_shutdown():
-	
-		detectionsL = detect_image(model, frameL)
-		detectionsR = detect_image(model, frameR)
+		start = time.time()
+		detection_time = rospy.Time.now()  #make test to understand where this should be placed
+		detectionL, detectionR = detect_image(model, frame)
+		#print(type(detectionR))
+		#print(np.shape(detection))
+		stop = time.time()
+		print(stop-start)
+		#print(detectionsL)
 		#time_stamp.append(rospy.Time.now())
 		#camera_transform.header.stamp = rospy.Time.now()
 		#tf_cam = tf2_msgs.msg.TFMessage([camera_transform])
 		#tf_broadcaster.publish(tf_cam)
 
 		#Cartesian coordinates:  (computed wrt the right camera)
-		if detectionsL.any() and detectionsR.any():
-			
-			xL, yL = show_detection(frameL, detectionsL,"ImageL")
+		if detectionL.any() and detectionR.any():
+
+			point_stamp.header.stamp = detection_time
+			xR, yR, xL, yL, img_mod = show_detection(frame, detectionR, detectionL,'Image')
 			centerL = np.array([xL,yL], dtype=np.float64)
-			xR, yR = show_detection(frameR, detectionsR, "ImageR")
 			centerR = np.array([xR,yR], dtype=np.float64)
+			
+			image_publisher.publish(bridge.cv2_to_imgmsg(img_mod, 'bgr8'))
 
 			global coordinates  #are necessary?
 			global filtered_coordinates
@@ -283,24 +306,33 @@ def main():
 			homog_points = position.transpose()
 			euclid_points = cv2.convertPointsFromHomogeneous(homog_points)
 			xy_position = euclid_points[0,0,0:2]/10
+			print(euclid_points)
+			z = 0.5
+
+			position_unfiltered = transformations.translation_matrix((xy_position[0]/100, xy_position[1]/100, z))  #m
+			rotate_position_unfiltered = np.dot(T, position_unfiltered[:,-1])
+			rotate_position_unfiltered = Vector3(rotate_position_unfiltered[0], rotate_position_unfiltered[1], rotate_position_unfiltered[2])
 			
+
 			filter.predict()
 			filter.update(xy_position)
-			xy_filtered = filter.x/100 #from mm to m
-			z = 0.5
+			xy_filtered = filter.x/100 #from cm to m
+			
 			position_to_topic = Vector3(xy_filtered[0,0],xy_filtered[2,0],z)
-			point = transformations.translation_matrix((position_to_topic.x, position_to_topic.y, position_to_topic.z))
+			point = transformations.translation_matrix((position_to_topic.x, position_to_topic.y, position_to_topic.z))  #add -0.02 m to x
 			rotate_point = np.dot(T, point[:,-1])
-			point_stamp = PointStamped()
+			
 			point_stamp.header.frame_id = 'lwr_7_link'
-			point_stamp.header.stamp = rospy.Time(0)
 			point_stamp.point.x = rotate_point[0]
 			point_stamp.point.y = rotate_point[1]
 			point_stamp.point.z = rotate_point[2]
-			#orientation = Quaternion(0.001, 0.702, 0.0, 0.712)
-			#pose = Pose(position_to_topic,orientation)
+			#stop = time.time()
+			#print(stop-start)
+			
 			if abs(position_to_topic.x) < 0.2 and abs(position_to_topic.y) < 0.2:
 				publisher.publish(point_stamp)
+				unfiltered_publisher.publish(rotate_position_unfiltered)
+			
 			print(rotate_point)
 			filtered_coordinates.append(xy_filtered)
 			#print(np.shape(filtered_coordinates))
@@ -310,9 +342,10 @@ def main():
 			#print('Filtered position:', filtered_coordinates)
 
 		else:
-			cv2.imshow('ImageL', frameL)
-			cv2.imshow('ImageR', frameR)
+			cv2.imshow('Image', frame)
+			#cv2.imshow('ImageR', frameR)
 			key = cv2.waitKey(1)
+			image_publisher.publish(bridge.cv2_to_imgmsg(frame, 'bgr8'))
 	
 		#rate.sleep()
 	#np.save('test', coordinates)
