@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 from lwr_controllers.msg import PoseRPY
 import rospy 
-from geometry_msgs.msg import Pose, Vector3, Point
+from geometry_msgs.msg import Pose, Vector3, Point, PointStamped
 from lwr_controllers.msg import RPY
 import math
 import time
@@ -41,7 +41,6 @@ cartesian_transform[2,3] = initial_position.z
 
 def callback(pos):
     global position
-    global orientation
     position = pos
 
 def get_actual_position(pose):
@@ -54,42 +53,52 @@ def get_actual_position(pose):
 
 def main():
     rospy.init_node('send_pose', anonymous=True)
-    rospy.Subscriber('/tool_pose', Vector3, callback)
+    rospy.Subscriber('/tool_pose', PointStamped, callback)
     rospy.Subscriber('/cartesian_position/pose/tooltip', PoseRPY, get_actual_position)
     publisher = rospy.Publisher('/lwr/one_task_inverse_kinematics/command', PoseRPY, queue_size=10)
+    publisher1 = rospy.Publisher('position', PointStamped, queue_size =10)
     rate = rospy.Rate(10)
     rospy.sleep(1)
     command = PoseRPY(0, initial_position, initial_orientation)
     publisher.publish(command)
-    time.sleep(2)
+    time.sleep(1)
+    now = rospy.Time.now() + rospy.Duration(0.9)
     listener = TransformListener()
-    listener.waitForTransform('lwr_base_link', 'lwr_7_link', rospy.Time(), rospy.Duration(2.0))
+    listener.waitForTransform('lwr_base_link', 'lwr_7_link', now, rospy.Duration(1.0))
     final_position = Vector3()
     final_position.z = 0.337287984555  #to be set
-    (trans, rot) = listener.lookupTransform('lwr_base_link', 'lwr_7_link', rospy.Time(0))
-    transform = listener.fromTranslationRotation(trans, rot)
-    #test = rospy.wait_for_message('/cartesian_position/pose/tooltip', PoseRPY, timeout =10000)
+    #(trans, rot) = listener.lookupTransform('lwr_base_link', 'lwr_7_link', rospy.Time(0))
+    #transform = listener.fromTranslationRotation(trans, rot)
 
     while not rospy.is_shutdown():
 	
-	point = transformations.translation_matrix((position.x, position.y, position.z)) #real point
-	publisher.publish(command)  #publish it in loop so it arrives at the exact position
+	point = transformations.translation_matrix((position.point.x, position.point.y, position.point.z)) #real point
+#--------------use listener transform point----------
+	wait = position.header.stamp + rospy.Duration(0.3)	
+	listener.waitForTransform('lwr_base_link', 'lwr_7_link', wait , rospy.Duration(2.0))
+	position_base = listener.transformPoint('lwr_base_link', position)
+	position_base.header.stamp = rospy.Time.now()
+	publisher1.publish(position_base)
+	final_position.x = position_base.point.x
+	final_position.y = position_base.point.y
+	final_position.z = position_base.point.z + 0.1
+	#print('listener',final_position)
+
 #---------------------tf transform---------------------	
         #(trans, rot) = listener.lookupTransform('lwr_base_link', 'lwr_7_link', rospy.Time(0))
 	#transform = listener.fromTranslationRotation(trans, rot)
-	position_new = np.dot(T, point[:,-1])
-	position_new = np.dot(transform, position_new)
+	#position_new = np.dot(T, point[:,-1])
+
 	#position_new = np.dot(transform, point[:,-1])
-	print('transf',position_new)
-	print('actual',actual_position)
 #-----------------------------------------------------------	
 #-------------------tooltip transform-------------------
 	#position_new = np.dot(T, point[:,-1])
 	#position_new = np.dot(cartesian_transform, position_new)
 	#print('tooltip_new', position_new)
 #------------------------------------------------------------------
-	final_position.x = position_new[0]
-        final_position.y = position_new[1]
+
+	#final_position.x = position_new[0]
+        #final_position.y = position_new[1]
 	command = PoseRPY(0, final_position, initial_orientation)
 	
 	#print('f',final_position)
