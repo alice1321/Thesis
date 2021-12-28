@@ -1,4 +1,8 @@
 #! /usr/bin/env python3
+
+# This node takes in input the position of the instrument in the local RF of the camera, expresses it in the global RF
+# and than send it to the one task inverse kinematics controller.
+
 from lwr_controllers.msg import PoseRPY
 import rospy 
 from geometry_msgs.msg import Pose, Vector3, Point, PointStamped
