@@ -14,7 +14,6 @@ def callbackL(ros_data):
     global imgL
     np_arr = np.frombuffer(ros_data.data, np.uint8)
     imgL = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-    #print('aaaa')
     #cv2.imshow('Img 1',imgL)
     #cv2.waitKey(1)
 
@@ -23,7 +22,6 @@ def callbackR(ros_data):
     global imgR
     np_arr = np.frombuffer(ros_data.data, np.uint8)
     imgR = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-    #print('bbb')
     #cv2.imshow('Img 1',imgL)
     #cv2.waitKey(1)
 
@@ -57,7 +55,6 @@ def main():
     rospy.sleep(1)   #sleeeps for 1 second in order to have img published before the while
     while not rospy.is_shutdown():
         k = cv2.waitKey(5)
-        #print('oooo')
         #if k == 27:
             #break
         if k == ord('s'): # wait for 's' key to save and exit
