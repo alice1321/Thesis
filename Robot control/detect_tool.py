@@ -239,7 +239,7 @@ def main():
 
 	while not rospy.is_shutdown():
 		start = time.time()
-		detection_time = rospy.Time.now()  #make test to understand where this should be placed
+		detection_time = rospy.Time.now()
 		detectionL, detectionR = detect_image(model, frame)
 		stop = time.time()
 		print(stop-start)
