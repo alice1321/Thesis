@@ -1,5 +1,10 @@
 #! /usr/bin/env python3
 
+# This node takes images from topics coming from the stereo camera mounted on the EE of the Kuka arm,
+# identifies a laparoscopic tool by means of YOLOv3 object detection NN (trained on a custom dataset),
+# and computes the position of the instrument wrt the camera using the disparity between the two images. 
+# The computed position id than sent to the 'send_position' node.
+
 #---TO DO---
 # use rospy.time to set the update of the Kalman at the correct time  
 # plot coordinates and filtered coordinates in time to see the delay x-time, y-time
