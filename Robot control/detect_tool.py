@@ -3,7 +3,7 @@
 # This node takes images from topics coming from the stereo camera mounted on the EE of the Kuka arm,
 # identifies a laparoscopic tool by means of YOLOv3 object detection NN (trained on a custom dataset),
 # and computes the position of the instrument wrt the camera using the disparity between the two images. 
-# The computed position id than sent to the 'send_position' node.
+# The computed position is then sent to the 'send_position' node.
 
 #---TO DO---
 # use rospy.time to set the update of the Kalman at the correct time  
@@ -42,7 +42,7 @@ T = np.array(([-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1])) #camera
 # Input arguments
 parser = argparse.ArgumentParser(description = "Object detection")
 parser.add_argument("-m", "--model", type=str, default="config/yolov3-custom.cfg", help="Path to model definition file (.cfg)")
-parser.add_argument("-w", "--weights", type=str, default="weights/yolov3_ckpt_360.pth", help="Path to weights or checkpoint file")  #20 best
+parser.add_argument("-w", "--weights", type=str, default="weights/yolov3_ckpt_360.pth", help="Path to weights or checkpoint file")
 parser.add_argument("-c", "--classes", type=str, default="data/custom/classes.names", help="Path to classes label file (.names)")
 parser.add_argument("--img_size", type=int, default=416, help="Size of each image dimension for yolo")   
 parser.add_argument("--conf_thres", type=float, default=0.1, help="Object confidence threshold")
