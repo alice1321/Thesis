@@ -21,7 +21,6 @@ def callbackL(ros_data):
     global imgL
     np_arr = np.frombuffer(ros_data.data, np.uint8)
     imgL = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-    #print('aaaa')
     #cv2.imshow('Img 1',imgL)
     #cv2.waitKey(1)
 
@@ -30,7 +29,6 @@ def callbackR(ros_data):
     global imgR
     np_arr = np.frombuffer(ros_data.data, np.uint8)
     imgR = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-    #print('bbb')
     #cv2.imshow('Img 1',imgL)
     #cv2.waitKey(1)
 
