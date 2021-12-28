@@ -9,7 +9,7 @@ import numpy as np
 from tf import transformations
 
 
-#set initial orientation so the camera one is known wrt it
+#set initial orientation
 roll = -3.13796658242
 pitch = -0.0380158347695
 yaw = -3.11634577067
