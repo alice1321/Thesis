@@ -291,7 +291,7 @@ def main():
 				unfiltered_publisher.publish(rotate_position_unfiltered)
 			
 			print(rotate_point)
-			global coordinates  #are necessary?
+			global coordinates
 			global filtered_coordinates
 			filtered_coordinates.append(xyz_filtered)
 			coordinates.append(euclid_points[0,0,:]/10)
