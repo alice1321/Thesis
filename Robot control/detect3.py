@@ -1,11 +1,10 @@
 #! /usr/bin/env python3
 
 #---TO DO---
-# look for rospy.time to set the update of the Kalman at the correct time  
-# plot coordinates and filteren coordinates in time to see the delay x-time, y-time
-# measure the offset of the camera wrt link 7 
-#look at the tf tree 
-#if position is not published, publish current position
+# use rospy.time to set the update of the Kalman at the correct time  
+# plot coordinates and filtered coordinates in time to see the delay x-time, y-time
+# add the camera offset wrt the link7 in the transform T
+# write the code in classes
 
 import rospy
 from rospy.names import initialize_mappings
@@ -63,13 +62,6 @@ classes = load_classes(args.classes)
 model = load_model(args.model, args.weights)
 model.eval()
 
-
-'''backend = "qnnpack"
-model.qconfig = torch.quantization.get_default_qconfig(backend)
-torch.backends.quantized.engine = backend
-model_static_quantized = torch.quantization.prepare(model, inplace=False)
-model = torch.quantization.convert(model_static_quantized, inplace=False)'''
-
 img_size = args.img_size
 conf_thresh = args.conf_thres
 nms_thresh = args.nms_thres
@@ -88,7 +80,7 @@ distR = parameters_file.getNode("distR").mat()
 parameters_file.release()
 translL = -translL
 
-#projection matrixes A
+#projection matrices A
 
 RTR = cv2.hconcat([np.eye(3), np.zeros((3,1))])
 PR = np.dot(intrinsic_paramR,RTR)
@@ -127,7 +119,7 @@ filter.Q = Q_discrete_white_noise(dim=2, dt= 0.35, var = 0.25,  block_size = 2) 
 
 def callback_single_image(ros_data):
 	global frame
-	np_arr = np.frombuffer(ros_data.data, np.uint8)   #fromstring initially
+	np_arr = np.frombuffer(ros_data.data, np.uint8)
 	frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 	frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 	#cv2.imshow('frame',frame)
@@ -143,7 +135,6 @@ def detect_image(model, image, img_size=416, conf_thres=0.1, nms_thres=0.4):
 	#unsqueeze transforms the new image in a column i.e. dimension 0 becomes unitary
 	if torch.cuda.is_available():
 		 input_img = input_img.to("cuda")
-		 # passare da cpu a cuda richiede tempo; valutare se l'operazione sia utile
 
 	#Detection: use torch.no_grad to deactivate the autograd engine. This is done 
 	#to perform inference without Gradient Calculation.
@@ -188,8 +179,6 @@ def show_detection(image, detectionsR, detectionsL, name):
 			cv2.putText(image, 'Confidence Right: ' + str(conf),(x1, y1),font, 0.5, color, 1)
 			break
 			#cv2.putText(image, 'Confidence Right: ' + str(conf),(0, 368),font, 0.5, color, 1)
-		#else:
-			#continue
 
 
 	#inference = float("{0:.4f}".format(stop-start))
@@ -274,13 +263,10 @@ def main():
 
 	while not rospy.is_shutdown():
 		start = time.time()
-		detection_time = rospy.Time.now()  #make test to understand where this should be placed
+		detection_time = rospy.Time.now()
 		detectionL, detectionR = detect_image(model, frame)
-		#print(type(detectionR))
-		#print(np.shape(detection))
 		stop = time.time()
 		print(stop-start)
-		#print(detectionsL)
 		#time_stamp.append(rospy.Time.now())
 		#camera_transform.header.stamp = rospy.Time.now()
 		#tf_cam = tf2_msgs.msg.TFMessage([camera_transform])
@@ -319,7 +305,7 @@ def main():
 			xy_filtered = filter.x/100 #from cm to m
 			
 			position_to_topic = Vector3(xy_filtered[0,0],xy_filtered[2,0],z)
-			point = transformations.translation_matrix((position_to_topic.x, position_to_topic.y, position_to_topic.z))  #add -0.02 m to x
+			point = transformations.translation_matrix((position_to_topic.x, position_to_topic.y, position_to_topic.z))
 			rotate_point = np.dot(T, point[:,-1])
 			
 			point_stamp.header.frame_id = 'lwr_7_link'
@@ -335,10 +321,9 @@ def main():
 			
 			print(rotate_point)
 			filtered_coordinates.append(xy_filtered)
-			#print(np.shape(filtered_coordinates))
 			coordinates.append(euclid_points[0,0,:]/10)
 			#print(filter.K)
-			#print("Position:", euclid_points/10)  #expressed in cm
+			#print('Position:', euclid_points/10)  #expressed in cm
 			#print('Filtered position:', filtered_coordinates)
 
 		else:
