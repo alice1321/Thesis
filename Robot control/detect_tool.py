@@ -36,21 +36,10 @@ from geometry_msgs.msg import Vector3
 from geometry_msgs.msg import Pose, Point, Quaternion, Vector3, PoseStamped, PointStamped
 from tf import TransformListener, listener, transformations
 
-
-
-global frameL
-global frameR
 bridge = CvBridge()
-global coordinates 
-global filtered_coordinates
-global time_stamp
-time_stamp = []
-filtered_coordinates = []
-coordinates = [] #save the coordinates of the tip 
-T = np.array(([-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1])) #camera rotation wrt the tooltip
+T = np.array(([-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1])) #camera rotation wrt the tooltip (180 degree rotz)
 
-#----------------------------------------Input arguments------------------------------
-
+# Input arguments
 parser = argparse.ArgumentParser(description = "Object detection")
 parser.add_argument("-m", "--model", type=str, default="config/yolov3-custom.cfg", help="Path to model definition file (.cfg)")
 parser.add_argument("-w", "--weights", type=str, default="weights/yolov3_ckpt_360.pth", help="Path to weights or checkpoint file")  #20 best
@@ -60,8 +49,7 @@ parser.add_argument("--conf_thres", type=float, default=0.1, help="Object confid
 parser.add_argument("--nms_thres", type=float, default=0.4, help="IOU threshold for non-maximum suppression")
 args = parser.parse_args()
 
-#Load the model and classes
-
+# Load the model and classes
 torch.backends.cudnn.benchmark = True
 classes = load_classes(args.classes)  
 model = load_model(args.model, args.weights)
@@ -71,8 +59,7 @@ img_size = args.img_size
 conf_thresh = args.conf_thres
 nms_thresh = args.nms_thres
 
-#Load parameters
-
+# Load parameters
 parameters_file = cv2.FileStorage()
 #parameters_file.open("parameters4pp.xml", cv2.FileStorage_READ)
 parameters_file.open("CameraCalib1.xml", cv2.FileStorage_READ)
@@ -85,8 +72,7 @@ distR = parameters_file.getNode("distR").mat()
 parameters_file.release()
 translL = -translL
 
-#projection matrices A
-
+# Projection matrices A
 RTR = cv2.hconcat([np.eye(3), np.zeros((3,1))])
 PR = np.dot(intrinsic_paramR,RTR)
 
@@ -108,20 +94,27 @@ proj_matL = proj_matrix.getNode('ProjectiveMatL').mat()
 proj_matR = proj_matrix.getNode('ProjectiveMatR').mat()
 proj_matrix.release()'''
 
-#-----------------------Filter-------------------------------
-delta_t = 0.35
+# Filter xy
+'''delta_t = 0.35
 filter = KalmanFilter(dim_x = 4, dim_z= 2)
 filter.X = np.array([0., 0., 0., 0.]) #initial state
 filter.F = np.array([[1., delta_t, 0., 0.], [0., 1., 0., 0.], [0., 0., 1., delta_t], [0., 0., 0., 1.]])
 filter.H = np.array([[1., 0., 0., 0.],[0., 0., 1., 0.]])
 filter.P *= 400 #variance squared -- 20 cm of estimation error
 filter.R = np.array([[9.,0.],[0.,9.]])  #3cm of measurement error
-filter.Q = Q_discrete_white_noise(dim=2, dt= 0.35, var = 0.25,  block_size = 2) #dim=2 constant velocity
-#--------------------------------------------------------------------
+filter.Q = Q_discrete_white_noise(dim=2, dt= 0.35, var = 0.25,  block_size = 2) #dim=2 constant velocity'''
 
+# Filter xyz
+delta_t = 0.35
+filter = KalmanFilter(dim_x = 6, dim_z= 3)
+filter.x = np.array([0., 0., 0., 0., 20., 0.]) #initial state
+filter.F = np.array([[1., delta_t, 0., 0., 0., 0.], [0., 1., 0., 0., 0., 0.], [0., 0., 1., delta_t, 0., 0.], [0., 0., 0., 1., 0., 0.], [0., 0., 0., 0., 1., delta_t], [0., 0., 0., 0., 0., 1.]])
+filter.H = np.array([[1., 0., 0., 0., 0., 0.],[0., 0., 1., 0., 0., 0.], [0., 0., 0., 0., 1., 0.]])
+filter.P *= 400#variance squared -- 20 cm of estimation error
+filter.R = np.array([[9., 0., 0.],[0., 9., 0.], [0., 0., 400.]])  #3cm of measurement error
+filter.Q = Q_discrete_white_noise(dim=2, dt= 0.35, var = 0.25, block_size = 3)  # dim=2 constant velocity
 
-#------------------------callbacks---------------------------------------
-
+# Callbacks
 def callback_single_image(ros_data):
 	global frame
 	np_arr = np.frombuffer(ros_data.data, np.uint8)
@@ -130,10 +123,7 @@ def callback_single_image(ros_data):
 	#cv2.imshow('frame',frame)
 	#cv2.waitKey(50)
 
-
-#--------------------------------------------------------------------------------------
-#---------------------------functions----------------------------------------------
-
+# Functions
 def detect_image(model, image, img_size=416, conf_thres=0.1, nms_thres=0.4):
 	
 	input_img = transforms.Compose([DEFAULT_TRANSFORMS, Resize(img_size)])((image,np.zeros((1,5))))[0].unsqueeze(0)
@@ -193,9 +183,8 @@ def show_detection(image, detectionsR, detectionsL, name):
 	cv2.imshow(name, image)
 	key = cv2.waitKey(1)
 	return x_center_R, y_center_R, x_center_L, y_center_L, image
-#-------------------------------------------------------------------------
 
-#--------------------------------offline prediction on a video-------------------
+#---------------------offline prediction on a video-------------------
 
 '''	#Take images from video 
 	video = cv2.VideoCapture("00013.MTS")
@@ -220,16 +209,11 @@ def show_detection(image, detectionsR, detectionsL, name):
 #------------------------------------------------------------------------------------------
 
 def main():
-	global frameL
-	global frameR
 	global frame
-	global coordinates
-	global filtered_coordinates
-	global time_stamp
-	global pose
+	time_stamp = []
+	filtered_coordinates = []
+	coordinates = [] #save the coordinates of the tip 
 	point_stamp = PointStamped()
-#--------------------------------------------------------------------
-
 	rospy.init_node('video_subscriber', anonymous = True)
 	publisher = rospy.Publisher('tool_pose', PointStamped, queue_size=10)
 	image_publisher = rospy.Publisher('processed_images', Image, queue_size=1)
@@ -239,20 +223,7 @@ def main():
 	rate = rospy.Rate(10)
 	time.sleep(1)
 
-#-----------publish initial pose of the robot as first command-----------
-
-	initial_position = Vector3(0.253434185055, 0.2045420407383, 0.408027999353)  #simulation
-	roll_sim = 3.10409946183
-	pitch_sim = 0.0220493542626
-	yaw_sim = 2.70671490846
-	#add for real robot too
-	#initial_orientation = transformations.quaternion_from_euler(roll_sim, pitch_sim, yaw_sim)
-	#pose = Pose(initial_position, initial_orientation)
-	#publisher.publish(initial_position)
-
-
-
-#------------publish camera tf-------------------------------
+#-----------------------publish camera tf-------------------------------
 	'''camera_transform = geometry_msgs.msg.TransformStamped()
 	camera_transform.header.frame_id = 'lwr_7_link' #to be completed 
 	camera_transform.header.stamp = rospy.Time.now()
@@ -268,7 +239,7 @@ def main():
 
 	while not rospy.is_shutdown():
 		start = time.time()
-		detection_time = rospy.Time.now()
+		detection_time = rospy.Time.now()  #make test to understand where this should be placed
 		detectionL, detectionR = detect_image(model, frame)
 		stop = time.time()
 		print(stop-start)
@@ -285,10 +256,8 @@ def main():
 			centerL = np.array([xL,yL], dtype=np.float64)
 			centerR = np.array([xR,yR], dtype=np.float64)
 			
-			image_publisher.publish(bridge.cv2_to_imgmsg(img_mod, 'bgr8'))
+			#image_publisher.publish(bridge.cv2_to_imgmsg(img_mod, 'bgr8'))
 
-			global coordinates  #are necessary?
-			global filtered_coordinates
 			undistort_L = cv2.undistortPoints(centerL.transpose(), intrinsic_paramL, distL)
 			undistort_R = cv2.undistortPoints(centerR.transpose(), intrinsic_paramR, distR)
 
@@ -296,23 +265,20 @@ def main():
 			position = cv2.triangulatePoints(RTR, RTL, undistort_R, undistort_L) #PR,PL only identity and extrinsic
 			homog_points = position.transpose()
 			euclid_points = cv2.convertPointsFromHomogeneous(homog_points)
-			xy_position = euclid_points[0,0,0:2]/10
-			print(euclid_points)
-			z = 0.5
-
-			position_unfiltered = transformations.translation_matrix((xy_position[0]/100, xy_position[1]/100, z))  #m
-			rotate_position_unfiltered = np.dot(T, position_unfiltered[:,-1])
+			xyz_position = euclid_points[0,0,:]/10
+			
+			position_unfiltered = np.array([xyz_position[0]/100, xyz_position[1]/100, xyz_position[2]/100, 1])  #m
+			rotate_position_unfiltered = np.dot(T, position_unfiltered)
 			rotate_position_unfiltered = Vector3(rotate_position_unfiltered[0], rotate_position_unfiltered[1], rotate_position_unfiltered[2])
 			
-
 			filter.predict()
-			filter.update(xy_position)
-			xy_filtered = filter.x/100 #from cm to m
+			filter.update(xyz_position)
+			xyz_filtered = filter.x/100 #from cm to m
 			
-			position_to_topic = Vector3(xy_filtered[0,0],xy_filtered[2,0],z)
-			point = transformations.translation_matrix((position_to_topic.x, position_to_topic.y, position_to_topic.z))
-			rotate_point = np.dot(T, point[:,-1])
-			
+			position_to_topic = Vector3(xyz_filtered[0],xyz_filtered[2], xyz_filtered[4])
+			point = np.array([position_to_topic.x, position_to_topic.y, position_to_topic.z, 1])
+			rotate_point = np.dot(T, point)
+		
 			point_stamp.header.frame_id = 'lwr_7_link'
 			point_stamp.point.x = rotate_point[0]
 			point_stamp.point.y = rotate_point[1]
@@ -325,15 +291,13 @@ def main():
 				unfiltered_publisher.publish(rotate_position_unfiltered)
 			
 			print(rotate_point)
-			filtered_coordinates.append(xy_filtered)
+			global coordinates  #are necessary?
+			global filtered_coordinates
+			filtered_coordinates.append(xyz_filtered)
 			coordinates.append(euclid_points[0,0,:]/10)
-			#print(filter.K)
-			#print('Position:', euclid_points/10)  #expressed in cm
-			#print('Filtered position:', filtered_coordinates)
 
 		else:
 			cv2.imshow('Image', frame)
-			#cv2.imshow('ImageR', frameR)
 			key = cv2.waitKey(1)
 			image_publisher.publish(bridge.cv2_to_imgmsg(frame, 'bgr8'))
 	
