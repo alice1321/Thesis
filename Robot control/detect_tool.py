@@ -6,7 +6,6 @@
 # The computed position is then sent to the 'send_position' node.
 
 #---TO DO---
-# use rospy.time to set the update of the Kalman at the correct time  
 # plot coordinates and filtered coordinates in time to see the delay x-time, y-time
 # add the camera offset wrt the link7 in the transform T
 # write the code in classes
