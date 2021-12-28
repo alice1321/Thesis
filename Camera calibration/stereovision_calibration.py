@@ -3,7 +3,7 @@ import cv2 as cv
 import glob
 
 
-################ FIND CHESSBOARD CORNERS - OBJECT POINTS AND IMAGE POINTS #############################
+# FIND CHESSBOARD CORNERS - OBJECT POINTS AND IMAGE POINTS
 
 chessboardSize = (13,9)
 frameSize = (1080,960)  #modify to full size image
@@ -66,7 +66,7 @@ cv.destroyAllWindows()
 
 
 
-############## CALIBRATION #######################################################
+# CALIBRATION
 
 retL, cameraMatrixL, distL, rvecsL, tvecsL, stdDeviationsIntrinsicsL, stdDeviationsExtrinsicsL, RMSL = cv.calibrateCameraExtended(objpoints, imgpointsL, frameSize, None, None )
 heightL, widthL, channelsL = imgL.shape
@@ -78,7 +78,7 @@ newCameraMatrixR, roi_R = cv.getOptimalNewCameraMatrix(cameraMatrixR, distR, (wi
 
 
 
-########## Stereo Vision Calibration #############################################
+# Stereo Vision Calibration
 
 #flags = 0
 #flags = cv.CALIB_USE_INTRINSIC_GUESS
@@ -107,7 +107,7 @@ saved_param.write('distR',distR)
 
 saved_param.release()
 
-########## Stereo Rectification #################################################
+# Stereo Rectification
 
 rectifyScale= 1
 rectL, rectR, projMatrixL, projMatrixR, Q, roi_L, roi_R= cv.stereoRectify(newCameraMatrixL, distL, newCameraMatrixR, distR, grayL.shape[::-1], rot, trans, rectifyScale,(0,0))
